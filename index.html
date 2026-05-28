@@ -44,6 +44,368 @@
 
     <!-- Notifikasi Putar Layar (Khusus Mobile Portrait) -->
     <div id="landscape-notice" class="hidden fixed inset-0 bg-slate-950 z-50 flex-col items-center justify-center p-6 text-center">
+        <div class="animate-bounce mb-4 text-indigo-400">
+            <svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2zM9 5h6"></path>
+            </svg>
+        </div>
+        <h2 class="text-xl font-bold mb-2">Mode Landscape Sangat Direkomendasikan</h2>
+        <p class="text-slate-400 text-sm max-w-xs">Putar perangkat Anda ke posisi tidur (Lanskap) untuk area bermain sandbox yang lebih maksimal.</p>
+        <button onclick="document.getElementById('landscape-notice').style.display='none'" class="mt-6 px-5 py-2 bg-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-500">Tetap lanjut</button>
+    </div>
+
+    <!-- Background 3D Viewport -->
+    <canvas id="gameCanvas" class="absolute inset-0 z-0"></canvas>
+
+    <!-- UI Kiri: Sidebar Sandbox & Warna Objek -->
+    <div class="absolute top-4 left-4 bottom-4 flex flex-col gap-4 z-10 pointer-events-none max-w-xs">
+        <!-- Brand & Info Status -->
+        <div class="bg-slate-900/90 backdrop-blur-md p-4 rounded-2xl border border-slate-800 pointer-events-auto shadow-2xl">
+            <h1 class="text-base font-extrabold tracking-wider text-indigo-400 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                AI HAND SANDBOX
+            </h1>
+            <p class="text-[10px] text-slate-400 mt-1 leading-normal">
+                Gunakan kamera depan. Tempelkan jempol & telunjuk Anda (mencubit) untuk menggenggam benda!
+            </p>
+            
+            <!-- Indikator Pelacakan AI -->
+            <div class="mt-3 flex items-center justify-between text-xs border-t border-slate-800 pt-2.5">
+                <span id="aiStatusText" class="text-amber-400 font-semibold flex items-center gap-1">
+                    ⚠️ Menginisialisasi Kamera...
+                </span>
+            </div>
+        </div>
+
+        <!-- Menu Tambah Objek -->
+        <div class="bg-slate-900/90 backdrop-blur-md p-4 rounded-2xl border border-slate-800 pointer-events-auto shadow-2xl flex-1 flex flex-col justify-between overflow-y-auto">
+            <div>
+                <span class="text-[10px] font-bold text-slate-400 tracking-wider uppercase block mb-2">Pilih & Spawn Objek</span>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="spawnObject('cube', 0x3b82f6)" class="p-3 bg-slate-800/80 hover:bg-indigo-600 rounded-xl flex flex-col items-center justify-center gap-1 transition active:scale-95 border border-slate-700/50">
+                        <span class="text-xl">📦</span>
+                        <span class="text-[10px] font-medium">Kubus Biru</span>
+                    </button>
+                    <button onclick="spawnObject('cylinder', 0xa855f7)" class="p-3 bg-slate-800/80 hover:bg-indigo-600 rounded-xl flex flex-col items-center justify-center gap-1 transition active:scale-95 border border-slate-700/50">
+                        <span class="text-xl">🛢️</span>
+                        <span class="text-[10px] font-medium">Tabung Ungu</span>
+                    </button>
+                    <button onclick="spawnObject('sphere', 0xf97316)" class="p-3 bg-slate-800/80 hover:bg-indigo-600 rounded-xl flex flex-col items-center justify-center gap-1 transition active:scale-95 border border-slate-700/50">
+                        <span class="text-xl">🔴</span>
+                        <span class="text-[10px] font-medium">Bola Jingga</span>
+                    </button>
+                    <button onclick="spawnObject('torus', 0xec4899)" class="p-3 bg-slate-800/80 hover:bg-indigo-600 rounded-xl flex flex-col items-center justify-center gap-1 transition active:scale-95 border border-slate-700/50">
+                        <span class="text-xl">🍩</span>
+                        <span class="text-[10px] font-medium">Donat Merah</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Kontrol Fisika Global -->
+            <div class="mt-4 border-t border-slate-800 pt-3 flex flex-col gap-2">
+                <button id="btnGravity" class="w-full py-2.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-800/50 text-indigo-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2">
+                    <span id="gravIcon">🌍</span> <span id="gravText">GRAVITASI AKTIF</span>
+                </button>
+                <button id="btnReset" class="w-full py-2.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/50 text-rose-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2">
+                    <span>🧹</span> BERSIHKAN SCENE
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI Kanan Bawah: Jendela Pratinjau Kamera (Picture-In-Picture dengan Skeletal Overlay) -->
+    <div class="absolute bottom-4 right-4 z-10 flex flex-col gap-2">
+        <div class="bg-slate-900/95 border border-slate-700/80 p-1.5 rounded-2xl shadow-2xl relative overflow-hidden w-48 h-36 md:w-56 md:h-42">
+            <!-- Video Tersembunyi (digunakan sebagai input MediaPipe) -->
+            <video id="webcam" class="hidden" autoplay playsinline></video>
+            
+            <!-- Canvas Overlay untuk Pratinjau Deteksi Sendi Jari -->
+            <canvas id="cameraOverlay" class="w-full h-full object-cover rounded-xl scale-x-[-1] bg-slate-950"></canvas>
+            
+            <div class="absolute top-3 left-3 bg-slate-950/80 px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-emerald-400 border border-emerald-500/30">
+                LIVE FEED
+            </div>
+        </div>
+    </div>
+
+    <!-- UI Overlay Tengah: Petunjuk Memulai / Perizinan Kamera -->
+    <div id="startupOverlay" class="fixed inset-0 bg-slate-950/95 z-40 flex items-center justify-center p-4 backdrop-blur-md">
+        <div class="bg-slate-900 border border-slate-800 max-w-md w-full p-6 rounded-3xl shadow-2xl text-center">
+            <div class="w-16 h-16 bg-indigo-950 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-400 border border-indigo-500/20 text-3xl">
+                📷
+            </div>
+            <h3 class="text-lg font-bold text-indigo-300">Izinkan Akses Kamera</h3>
+            <p class="text-sm text-slate-400 mt-2 leading-relaxed">
+                Aplikasi ini membutuhkan akses kamera depan untuk melakukan <strong>Hand Tracking 3D</strong> secara langsung menggunakan gerakan tangan asli Anda.
+            </p>
+            <div class="my-5 p-3.5 bg-slate-950 rounded-xl text-left text-xs text-slate-400 space-y-2">
+                <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                    <span>Proses pelacakan dilakukan lokal di browser HP Anda.</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                    <span>TIDAK ada data video yang dikirim atau disimpan ke server.</span>
+                </div>
+            </div>
+            <button id="btnAllowCamera" class="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl font-bold text-sm hover:from-indigo-500 hover:to-violet-500 transition active:scale-95 shadow-lg shadow-indigo-500/20">
+                IZINKAN & MULAI MAIN
+            </button>
+        </div>
+    </div>
+
+    <!-- Script Game & Logika Deteksi AI -->
+    <script>
+        // --- SETUP AUDIO SINTETIS (Untuk interaksi) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(freq, type, duration, volume = 0.1) {
+            try {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) { console.warn("Audio Context tertunda."); }
+        }
+
+        const soundSpawn = () => playTone(580, 'triangle', 0.15, 0.1);
+        const soundGrab = () => playTone(350, 'sine', 0.1, 0.15);
+        const soundRelease = () => playTone(250, 'sine', 0.1, 0.1);
+        const soundCollide = (vol = 0.1) => playTone(100 + Math.random() * 100, 'sawtooth', 0.15, vol);
+
+        // --- SETUP SCENE THREE.JS ---
+        const canvas = document.getElementById('gameCanvas');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x06060c);
+        scene.fog = new THREE.FogExp2(0x06060c, 0.03);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 5, 12);
+        camera.lookAt(0, 1.5, 0);
+
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Cahaya / Lighting
+        const ambientLight = new THREE.AmbientLight(0x1e293b, 1.2);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        dirLight.position.set(4, 15, 6);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        dirLight.shadow.bias = -0.0005;
+        scene.add(dirLight);
+
+        // Cahaya neon biru-ungu dekoratif di belakang grid
+        const stageLight1 = new THREE.PointLight(0x6366f1, 2, 20);
+        stageLight1.position.set(-6, 4, -4);
+        scene.add(stageLight1);
+
+        const stageLight2 = new THREE.PointLight(0xec4899, 1.5, 20);
+        stageLight2.position.set(6, 4, -4);
+        scene.add(stageLight2);
+
+        // Lantai Arena Bermain (Grid)
+        const floorGeo = new THREE.BoxGeometry(24, 0.4, 16);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0f1d, roughness: 0.6, metalness: 0.3 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.position.y = -0.2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        const gridHelper = new THREE.GridHelper(24, 24, 0x4f46e5, 0x1e293b);
+        gridHelper.position.y = 0.01;
+        scene.add(gridHelper);
+
+        // Batas-batas Sandbox (Dinding tak kasat mata agar benda tidak jatuh keluar)
+        const walls = [];
+        const wallMat = new THREE.MeshBasicMaterial({ visible: false });
+        
+        const bW = new THREE.Mesh(new THREE.BoxGeometry(24, 12, 0.5), wallMat); bW.position.set(0, 6, -8); scene.add(bW); walls.push(bW); // Belakang
+        const lW = new THREE.Mesh(new THREE.BoxGeometry(0.5, 12, 16), wallMat); lW.position.set(-12, 6, 0); scene.add(lW); walls.push(lW); // Kiri
+        const rW = new THREE.Mesh(new THREE.BoxGeometry(0.5, 12, 16), wallMat); rW.position.set(12, 6, 0); scene.add(rW); walls.push(rW); // Kanan
+        const fW = new THREE.Mesh(new THREE.BoxGeometry(24, 12, 0.5), wallMat); fW.position.set(0, 6, 8); scene.add(fW); walls.push(fW); // Depan
+
+
+        // --- MANAJEMEN HAND MESHES (SKELETON TANGAN 3D) ---
+        const activeHands = {}; // Menyimpan objek visualisasi 2 tangan: 'Left' & 'Right'
+
+        const jointMaterial = new THREE.MeshBasicMaterial({ color: 0x10b981 }); // Hijau terang menyala
+        const jointGeometry = new THREE.SphereGeometry(0.12, 8, 8);
+
+        function create3DHandRepresentation() {
+            const handGroup = new THREE.Group();
+            const joints = [];
+            
+            // Buat 21 bola untuk sendi jari
+            for (let i = 0; i < 21; i++) {
+                const sphere = new THREE.Mesh(jointGeometry, jointMaterial);
+                sphere.castShadow = true;
+                handGroup.add(sphere);
+                joints.push(sphere);
+            }
+
+            // Garis penghubung sendi (glowing wireframe)
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x34d399, linewidth: 2 });
+            const lineGeos = [];
+            const lines = [];
+
+            // Struktur relasi indeks antar tulang jari tangan (0-20)
+            const connections = [
+                [0, 1], [1, 2], [2, 3], [3, 4], // Jempol
+                [0, 5], [5, 6], [6, 7], [7, 8], // Telunjuk
+                [5, 9], [9, 10], [10, 11], [11, 12], // Tengah
+                [9, 13], [13, 14], [14, 15], [15, 16], // Manis
+                [13, 17], [17, 18], [18, 19], [19, 20], // Kelingking
+                [0, 17] // Pangkal telapak tangan bawah
+            ];
+
+            connections.forEach(() => {
+                const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+                const line = new THREE.Line(geo, lineMat);
+                handGroup.add(line);
+                lines.push({ line, geo });
+            });
+
+            scene.add(handGroup);
+
+            return {
+                group: handGroup,
+                joints: joints,
+                lines: lines,
+                connections: connections,
+                isPinching: false,
+                grabbedObject: null,
+                lastPinchPos: new THREE.Vector3()
+            };
+        }
+
+
+        // --- FISIKA & LOGIKA OBJEK SANDBOX ---
+        let physicsObjects = [];
+        let isGravityOn = true;
+
+        class SandboxObject {
+            constructor(type, colorCode, position) {
+                this.type = type;
+                const mat = new THREE.MeshStandardMaterial({
+                    color: colorCode,
+                    roughness: 0.15,
+                    metalness: 0.3,
+                    emissive: colorCode,
+                    emissiveIntensity: 0.15
+                });
+
+                let geo;
+                const size = 0.9;
+
+                if (type === 'cube') {
+                    geo = new THREE.BoxGeometry(size, size, size);
+                } else if (type === 'cylinder') {
+                    geo = new THREE.CylinderGeometry(size/2, size/2, size * 1.2, 16);
+                } else if (type === 'sphere') {
+                    geo = new THREE.SphereGeometry(size/1.8, 16, 16);
+                } else if (type === 'torus') {
+                    geo = new THREE.TorusGeometry(size/2, 0.15, 8, 24);
+                }
+
+                this.mesh = new THREE.Mesh(geo, mat);
+                this.mesh.position.copy(position);
+                this.mesh.castShadow = true;
+                this.mesh.receiveShadow = true;
+                scene.add(this.mesh);
+
+                this.velocity = new THREE.Vector3(0, 0, 0);
+                this.angularVelocity = new THREE.Vector3((Math.random()-0.5)*4, (Math.random()-0.5)*4, (Math.random()-0.5)*4);
+                this.radius = size / 2;
+                this.isHeld = false;
+                this.mass = 1.0;
+            }
+
+            update(dt) {
+                if (this.isHeld) return; // Posisi diatur manual saat digenggam tangan
+
+                // Terapkan Gravitasi
+                if (isGravityOn) {
+                    this.velocity.y -= 9.8 * dt;
+                }
+
+                // Pergerakan linear & rotasi
+                this.mesh.position.addScaledVector(this.velocity, dt);
+                this.mesh.rotation.x += this.angularVelocity.x * dt;
+                this.mesh.rotation.y += this.angularVelocity.y * dt;
+                this.mesh.rotation.z += this.angularVelocity.z * dt;
+
+                // Gesekan udara pelan (Damping)
+                this.velocity.multiplyScalar(Math.exp(-0.4 * dt));
+                this.angularVelocity.multiplyScalar(Math.exp(-0.8 * dt));
+
+                // --- TABRAKAN DENGAN LINGKUNGAN / BOUNDARIES ---
+                const bounce = 0.6; // Efek elastisitas
+
+                // Lantai
+                if (this.mesh.position.y < this.radius) {
+                    this.mesh.position.y = this.radius;
+                    if (Math.abs(this.velocity.y) > 0.4) {
+                        this.velocity.y = -this.velocity.y * bounce;
+                        soundCollide(Math.min(Math.abs(this.velocity.y)/6, 0.2));
+                    } else {
+                        this.velocity.y = 0;
+                    }
+                    this.velocity.x *= 0.9;
+                    this.velocity.z *= 0.9;
+                }
+
+                // Dinding Belakang (z = -8)
+                if (this.mesh.position.z < -8 + this.radius) {
+                    this.mesh.position.z = -8 + this.radius;
+                    this.velocity.z = -this.velocity.z * bounce;
+                    soundCollide(0.04);
+                }
+                // Dinding Depan (z = 8)
+                if (this.mesh.position.z > 8 - this.radius) {
+                    this.mesh.position.z = 8 - this.radius;
+                    this.velocity.z = -this.velocity.z * bounce;
+                    soundCollide(0.04);
+                }
+                // Dinding Kiri (x = -12)
+                if (this.mesh.position.x < -12 + this.radius) {
+                    this.mesh.position.x = -12 + this.radius;
+                    this.velocity.x = -this.velocity.x * bounce;
+                    soundCollide(0.04);
+                }
+                // Dinding Kanan (x = 12)
+                if (this.mesh.position.x > 12 - this.radius) {
+                    this.mesh.position.x = 12 - this.radius;
+                    this.velocity.x = -this.velocity.x * bounce;
+                    soundCollide(0.04);
+                }
+            }
+
+            destroy() {
+                scene.remove(this.mesh);
+                this.mesh.geometry.dispose();
+                this.mesh.material.disp            #landscape-notice {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden text-white">
+
+    <!-- Notifikasi Putar Layar (Khusus Mobile Portrait) -->
+    <div id="landscape-notice" class="hidden fixed inset-0 bg-slate-950 z-50 flex-col items-center justify-center p-6 text-center">
 
 ```
 ranslate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-semibold shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none z-50">
