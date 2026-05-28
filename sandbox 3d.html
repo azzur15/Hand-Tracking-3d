@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+    <title>3D Sandbox & Hand Tracking Game (Fixed)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+        #webcam-container {
+            position: absolute;
+            bottom: 155px;
+            right: 15px;
+            width: 100px;
+            height: 75px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            z-index: 30;
+            transform: scaleX(-1);
+            background-color: #000;
+            transition: all 0.3s ease;
+        }
+        @media (min-width: 640px) {
+            #webcam-container {
+                width: 160px;
+                height: 120px;
+                bottom: 20px;
+                right: 20px;
+            }
+        }
+        #webcam-container.minimized {
+            width: 0px !important;
+            height: 0px !important;
+            border: none !important;
+            opacity: 0;
+        }
+        #webcam-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 31;
+        }
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .scrollbar-none::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-none {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white">
+
+    <div id="canvas-container"></div>
+
+    <div class="absolute top-0 left-0 w-full p-3 z-20 pointer-events-none flex flex-col justify-between h-full">
+        <div class="flex flex-col sm:flex-row justify-between items-start w-full gap-2">
+            <div class="bg-slate-900/90 backdrop-blur-md p-3 rounded-xl border border-slate-700 pointer-events-auto max-w-xs w-full sm:w-auto">
+                <h1 class="text-lg font-bold flex items-center gap-2">
+                    <span class="text-indigo-400"><i class="fa-solid fa-shapes"></i></span>
+                    3D Multi-Shape Sandbox
+                </h1>
+                
+                <div class="mt-1.5 flex items-center gap-2 text-[11px]">
+                    <span id="tracking-status-dot" class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                    <span id="tracking-status-text" class="text-slate-300 font-medium">Mode Sentuh / Mouse</span>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/90 backdrop-blur-md p-2 rounded-xl border border-slate-700 pointer-events-auto flex flex-col gap-1.5 self-end sm:self-auto items-end">
+                <button id="btn-camera-toggle" class="px-3 py-1.5 bg-indigo-600 active:bg-indigo-700 hover:bg-indigo-500 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition duration-150-none">
+                    <i class="fa-solid fa-video"></i> <span id="camera-btn-text">Nyalakan Kamera</span>
+                </button>
+                <div id="https-warning" class="text-[9px] text-amber-400 hidden max-w-[180px] text-right leading-tight">
+                    *Gunakan HTTPS/Hosting agar kamera di HP Android berfungsi.
+                </div>
+            </div>
+        </div>
+
+        <div id="hand-instructions" class="self-center bg-black/70 backdrop-blur-sm px-4 py-2.5 rounded-full border border-white/10 pointer-events-none text-center hidden mb-24 animate-bounce">
+            <p class="text-xs font-medium flex items-center gap-1.5">
+                <i class="fa-solid fa-hand-pointer text-indigo-400 text-sm"></i>
+                <span id="instruction-text">Dekatkan tangan Anda ke kamera</span>
+            </p>
+        </div>
+
+        <div class="w-full flex flex-col gap-2.5 bg-slate-900/95 backdrop-blur-md p-3 rounded-2xl border border-slate-700 pointer-events-auto shadow-2xl">
+            
+            <div class="flex items-center gap-2 border-b border-slate-800 pb-2">
+                <span class="text-xs font-semibold text-slate-300 shrink-0">Bentuk:</span>
+                <div id="shape-selector" class="flex gap-2 overflow-x-auto scrollbar-none w-full">
+                    </div>
+            </div>
+
+            <div class="flex items-center gap-2 w-full">
+                <span class="text-xs font-semibold text-slate-300 shrink-0">Warna:</span>
+                <div id="block-selector" class="flex gap-2 overflow-x-auto scrollbar-none w-full">
+                    </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-2 border-t border-slate-800 pt-2">
+                <div class="text-[10px] text-slate-400 max-w-[45%] leading-tight">
+                    <i class="fa-solid fa-circle-info text-indigo-400"></i> Ketuk area tanah/objek untuk menaruh bentuk baru.
+                </div>
+                
+                <div class="flex items-center gap-1.5">
+                    <button id="btn-clear" class="px-2.5 py-1.5 bg-red-600/20 active:bg-red-600 border border-red-500/30 rounded-lg text-xs font-semibold flex items-center gap-1 text-red-300">
+                        <i class="fa-solid fa-trash-can"></i> <span>Hapus</span>
+                    </button>
+                    <button id="btn-gravity" class="px-2.5 py-1.5 bg-teal-600/20 active:bg-teal-600 border border-teal-500/30 rounded-lg text-xs font-semibold flex items-center gap-1 text-teal-300">
+                        <i class="fa-solid fa-earth-asia"></i> <span id="gravity-status">Fisika: OFF</span>
+                    </button>
+                    <button id="btn-help" class="p-1.5 bg-slate-800 active:bg-slate-700 rounded-lg text-xs font-semibold">
+                        <i class="fa-solid fa-circle-question text-base"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="webcam-container" class="minimized">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="webcam-canvas"></canvas>
+    </div>
+
+    <div id="modal-help" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-5 shadow-2xl relative max-h-[85vh] overflow-y-auto">
+            <button id="btn-close-help" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <h2 class="text-xl font-bold mb-3 text-indigo-400 flex items-center gap-2">
+                <i class="fa-solid fa-circle-info"></i> Petunjuk Bermain
+            </h2>
+            
+            <div class="space-y-3.5 text-slate-300 text-xs">
+                <div>
+                    <h3 class="font-bold text-white mb-1 flex items-center gap-1.5 text-sm">
+                        <i class="fa-solid fa-mobile-screen-button text-indigo-400"></i>Mode Sentuh / Mobile Android
+                    </h3>
+                    <ul class="list-disc list-inside space-y-1 pl-1">
+                        <li><strong>Ketuk Sekali:</strong> Membuat bentuk terpilih di atas tanah atau menumpuk di atas objek lain.</li>
+                        <li><strong>Geser 1 Jari:</strong> Memutar kamera dunia 3D.</li>
+                        <li><strong>Geser 2 Jari / Cubit:</strong> Menggeser atau memperbesar (Zoom) kamera.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="font-bold text-white mb-1 flex items-center gap-1.5 text-sm">
+                        <i class="fa-solid fa-hand-pointer text-indigo-400"></i>Mode Hand Tracking (Kamera)
+                    </h3>
+                    <p class="text-slate-400 mb-1">Butuh lingkungan terang dan protokol HTTPS:</p>
+                    <ul class="list-disc list-inside space-y-1 pl-1">
+                        <li><strong>Cubit Jari (Telunjuk + Jempol):</strong> Mengambil atau melahirkan objek baru di tangan.</li>
+                        <li><strong>Buka Jari:</strong> Melepaskan/menaruh objek.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <button id="btn-start-playing" class="w-full mt-4 py-2 bg-indigo-600 text-white font-bold rounded-xl text-sm">
+                Mulai Bermain
+            </button>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-36 left-1/2 transform -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-semibold shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none z-50">
+        Pesan Notifikasi
+    </div>
+
+    <script>
+        // --- CONFIG & STATE ---
+        const config = {
+            colors: [
+                { name: 'Merah', hex: '#ef4444', colorVal: 0xef4444 },
+                { name: 'Indigo', hex: '#6366f1', colorVal: 0x6366f1 },
+                { name: 'Hijau', hex: '#10b981', colorVal: 0x10b981 },
+                { name: 'Amber', hex: '#f59e0b', colorVal: 0xf59e0b },
+                { name: 'Pink', hex: '#ec4899', colorVal: 0xec4899 },
+                { name: 'Sian', hex: '#06b6d4', colorVal: 0x06b6d4 },
+                { name: 'Ungu', hex: '#a855f7', colorVal: 0xa855f7 }
+            ],
+            shapes: [
+                { id: 'box', name: 'Balok', icon: 'fa-cube' },
+                { id: 'pyramid', name: 'Piramida', icon: 'fa-triangle' },
+                { id: 'cylinder', name: 'Tiang', icon: 'fa-database' },
+                { id: 'capsule', name: 'Kapsul', icon: 'fa-capsules' }
+            ],
+            gravity: 12.0,
+            baseSize: 1.4
+        };
+
+        const state = {
+            selectedColorIndex: 1,
+            selectedShape: 'box',
+            physicsEnabled: false,
+            cameraActive: false,
+            cameraInitialized: false,
+            handInFrame: false,
+            isPinching: false,
+            pickedObject: null,
+            pointerPosition: new THREE.Vector3(),
+            blocks: []
+        };
+
+        let scene, camera, renderer, controls;
+        let groundPlane, gridHelper, pointerMesh;
+        const objectsToInteract = [];
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+        // Menampilkan peringatan HTTPS jika diakses lewat file lokal/HTTP biasa di perangkat mobile
+        if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            document.getElementById('https-warning').classList.remove('hidden');
+        }
+
+        // --- INITIALIZE THREE.JS ---
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+            scene.fog = new THREE.FogExp2(0x0f172a, 0.02);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 12, 16);
+
+            renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.08;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05;
+            controls.minDistance = 4;
+            controls.maxDistance = 40;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            dirLight.position.set(10, 30, 10);
+            scene.add(dirLight);
+
+            // Lantai
+            const groundGeo = new THREE.PlaneGeometry(40, 40);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+            groundPlane = new THREE.Mesh(groundGeo, groundMat);
+            groundPlane.rotation.x = -Math.PI / 2;
+            scene.add(groundPlane);
+
+            gridHelper = new THREE.GridHelper(40, 40, 0x4f46e5, 0x334155);
+            gridHelper.position.y = 0.01;
+            scene.add(gridHelper);
+
+            // Pointer Tangan
+            const pointerGeo = new THREE.SphereGeometry(0.3, 16, 16);
+            const pointerMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.7, wireframe: true });
+            pointerMesh = new THREE.Mesh(pointerGeo, pointerMat);
+            scene.add(pointerMesh);
+
+            createInitialScene();
+
+            // FIX: Touch Handler agar tidak bentrok dengan perputaran kamera OrbitControls
+            let touchStartX = 0, touchStartY = 0, isMoving = false;
+            renderer.domElement.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    isMoving = false;
+                }
+            }, { passive: true });
+
+            renderer.domElement.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1) {
+                    if (Math.hypot(e.touches[0].clientX - touchStartX, e.touches[0].clientY - touchStartY) > 10) {
+                        isMoving = true;
+                    }
+                }
+            }, { passive: true });
+
+            renderer.domElement.addEventListener('touchend', (e) => {
+                if (!isMoving && e.changedTouches.length === 1) {
+                    placeObject(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+                }
+            });
+
+            renderer.domElement.addEventListener('click', (e) => {
+                if (!isMobile) placeObject(e.clientX, e.clientY);
+            });
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // --- GEOMETRY CREATOR FACTORY ---
+        function getGeometry(shapeType, size) {
+            switch(shapeType) {
+                case 'pyramid':
+                    return new THREE.ConeGeometry(size * 0.7, size, 4);
+                case 'cylinder':
+                    return new THREE.CylinderGeometry(size * 0.5, size * 0.5, size, 16);
+                case 'capsule':
+                    return new THREE.CapsuleGeometry(size * 0.4, size * 0.6, 4, 8);
+                case 'box':
+default:
+                    return new THREE.BoxGeometry(size, size, size);
+            }
+        }
+
+        function spawnObjectMesh(x, y, z, shapeType, colorVal) {
+            const size = config.baseSize;
+            const geo = getGeometry(shapeType, size);
+            const mat = new THREE.MeshStandardMaterial({
+                color: colorVal || config.colors[state.selectedColorIndex].colorVal,
+                roughness: 0.4,
+                metalness: 0.1
+            });
+
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            
+            // Perbaikan rotasi cone/piramida agar berdiri tegak
+            if (shapeType === 'pyramid') {
+                mesh.rotation.y = Math.PI / 4;
+            }
+
+            mesh.userData = {
+                shapeType: shapeType,
+                velocity: new THREE.Vector3(0, 0, 0),
+                isGrabbed: false,
+                heightOffset: (shapeType === 'pyramid' || shapeType === 'cylinder' || shapeType === 'capsule') ? size / 2 : size / 2
+            };
+
+            scene.add(mesh);
+            state.blocks.push(mesh);
+            objectsToInteract.push(mesh);
+            return mesh;
+        }
+
+        function createInitialScene() {
+            // Membuat panggung tumpukan acak di awal
+            const shapes = ['box', 'pyramid', 'cylinder'];
+            for(let i = -1; i <= 1; i += 2) {
+                const shape = shapes[Math.floor(Math.random() * shapes.length)];
+                spawnObjectMesh(i * 3, config.baseSize / 2, 0, shape, config.colors[Math.floor(Math.random() * config.colors.length)].colorVal);
+            }
+        }
+
+        // --- INTERAKSI MOUSE / SENTUH ---
+        function placeObject(clientX, clientY) {
+            const mouse = new THREE.Vector2(
+                (clientX / window.innerWidth) * 2 - 1,
+                -(clientY / window.innerHeight) * 2 + 1
+            );
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects([groundPlane, ...state.blocks]);
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                let targetPos = new THREE.Vector3();
+                const size = config.baseSize;
+
+                if (intersect.object === groundPlane) {
+                    targetPos.copy(intersect.point);
+                    targetPos.y += size / 2;
+                } else {
+                    const normal = intersect.face.normal.clone().transformDirection(intersect.object.matrixWorld);
+                    targetPos.copy(intersect.object.position).addScaledVector(normal, size);
+                }
+
+                // Snap ke grid jika fisika nonaktif
+                if (!state.physicsEnabled) {
+                    targetPos.x = Math.round(targetPos.x / size) * size;
+                    targetPos.z = Math.round(targetPos.z / size) * size;
+                    if (targetPos.y < size / 2) targetPos.y = size / 2;
+                }
+
+                spawnObjectMesh(targetPos.x, targetPos.y, targetPos.z, state.selectedShape);
+                showToast("Objek ditambahkan!");
+            }
+        }
+
+        // --- SISTEM FISIKA (SIMPEL & PERBAIKAN BUG COLLISION) ---
+        function updatePhysics(deltaTime) {
+            if (!state.physicsEnabled) return;
+
+            const size = config.baseSize;
+            
+            for (let i = 0; i < state.blocks.length; i++) {
+                const obj = state.blocks[i];
+                if (obj.userData.isGrabbed) continue;
+
+                obj.userData.velocity.y -= config.gravity * deltaTime;
+                obj.position.addScaledVector(obj.userData.velocity, deltaTime);
+
+                // Batas lantai bawah
+                const radiusOffset = obj.userData.heightOffset;
+                if (obj.position.y < radiusOffset) {
+                    obj.position.y = radiusOffset;
+                    obj.userData.velocity.y = 0;
+                }
+
+                // Tabrakan sederhana antar objek (mencegah penumpukan tak terbatas)
+                for (let j = 0; j < state.blocks.length; j++) {
+                    if (i === j) continue;
+                    const other = state.blocks[j];
+                    if (other.userData.isGrabbed) continue;
+
+                    const dist = obj.position.distanceTo(other.position);
+                    if (dist < size) {
+                        const dy = obj.position.y - other.position.y;
+                        if (Math.abs(dy) > 0.5) {
+                            if (dy > 0) {
+                                obj.position.y = other.position.y + size;
+                                obj.userData.velocity.y = 0;
+                            }
+                        } else {
+                            // Dorong sedikit ke samping jika bertubrukan horizontal
+                            const force = 0.05;
+                            obj.position.x += Math.sign(obj.position.x - other.position.x) * force;
+                            obj.position.z += Math.sign(obj.position.z - other.position.z) * force;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- HAND TRACKING (MEDIAPIPE ENGINE) ---
+        let videoElement, canvasElement, canvasCtx, cameraUtilsInstance, handsInstance;
+
+        function initHandTracking() {
+            videoElement = document.getElementById('webcam');
+            canvasElement = document.getElementById('webcam-canvas');
+            canvasCtx = canvasElement.getContext('2d');
+
+            handsInstance = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            handsInstance.setOptions({
+                maxNumHands: 1,
+                modelComplexity: isMobile ? 0 : 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            handsInstance.onResults(onHandResults);
+
+            cameraUtilsInstance = new Camera(videoElement, {
+                onFrame: async () => { await handsInstance.send({ image: videoElement }); },
+                width: isMobile ? 320 : 640,
+                height: isMobile ? 240 : 480
+            });
+        }
+
+        function onHandResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                state.handInFrame = true;
+                document.getElementById('hand-instructions').classList.remove('hidden');
+                
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Gambar titik visual di kanvas kecil
+                canvasCtx.fillStyle = '#6366f1';
+                landmarks.forEach(p => {
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(p.x * canvasElement.width, p.y * canvasElement.height, 3, 0, 2*Math.PI);
+                    canvasCtx.fill();
+                });
+
+                const indexTip = landmarks[8];
+                const thumbTip = landmarks[4];
+                const distance = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y, indexTip.z - thumbTip.z);
+
+                // Proyeksi koordinat 2D kamera ke koordinat 3D game
+                const pointerX = (1 - indexTip.x) * 2 - 1;
+                const pointerY = -indexTip.y * 2 + 1;
+                const handScale = Math.hypot(landmarks[0].x - landmarks[9].x, landmarks[0].y - landmarks[9].y);
+                const depthFactor = Math.max(8, Math.min(28, 10 / handScale));
+
+                const rawVector = new THREE.Vector3(pointerX, pointerY, 0.5).unproject(camera);
+                const dir = rawVector.sub(camera.position).normalize();
+                const targetWorldPos = camera.position.clone().add(dir.multiplyScalar(depthFactor));
+
+                state.pointerPosition.set(
+                    Math.max(-18, Math.min(18, targetWorldPos.x)),
+                    Math.max(0.5, Math.min(15, targetWorldPos.y)),
+                    Math.max(-18, Math.min(18, targetWorldPos.z))
+                );
+
+                // Logika Pinch / Cubit
+                const pinchThreshold = 0.08;
+                if (distance < pinchThreshold) {
+                    if (!state.isPinching) {
+                        state.isPinching = true;
+                        onPinchStart();
+                    }
+                    onPinchMove();
+                } else {
+                    if (state.isPinching) {
+                        state.isPinching = false;
+                        onPinchEnd();
+                    }
+                }
+
+                document.getElementById('instruction-text').innerHTML = state.isPinching ? 
+                    "Mencubit: Membawa Objek Terpilih" : "Arahkan tangan & dekatkan jari untuk mencubit";
+                pointerMesh.material.color.setHex(state.isPinching ? 0x10b981 : config.colors[state.selectedColorIndex].colorVal);
+
+                updateStatusDot('active');
+            } else {
+                state.handInFrame = false;
+                document.getElementById('hand-instructions').classList.add('hidden');
+                updateStatusDot('searching');
+            }
+            canvasCtx.restore();
+        }
+
+        function onPinchStart() {
+            let closestObj = null;
+            let minDist = 3.5;
+
+            state.blocks.forEach(block => {
+                const dist = block.position.distanceTo(pointerMesh.position);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestObj = block;
+                }
+            });
+
+            if (closestObj) {
+                state.pickedObject = closestObj;
+                state.pickedObject.userData.isGrabbed = true;
+                state.pickedObject.userData.velocity.set(0, 0, 0);
+            } else {
+                // Melahirkan objek baru langsung di genggaman tangan virtual
+                const newObj = spawnObjectMesh(pointerMesh.position.x, pointerMesh.position.y, pointerMesh.position.z, state.selectedShape);
+                state.pickedObject = newObj;
+                state.pickedObject.userData.isGrabbed = true;
+                showToast("Membuat bentuk baru!");
+            }
+        }
+
+        function onPinchMove() {
+            if (state.pickedObject) state.pickedObject.position.copy(pointerMesh.position);
+        }
+
+        function onPinchEnd() {
+            if (state.pickedObject) {
+                state.pickedObject.userData.isGrabbed = false;
+                if (!state.physicsEnabled) {
+                    const size = config.baseSize;
+                    state.pickedObject.position.x = Math.round(state.pickedObject.position.x / size) * size;
+                    state.pickedObject.position.z = Math.round(state.pickedObject.position.z / size) * size;
+                    state.pickedObject.position.y = Math.max(state.pickedObject.userData.heightOffset, Math.round(state.pickedObject.position.y / size) * size);
+                }
+                state.pickedObject = null;
+                showToast("Objek dilepaskan.");
+            }
+        }
+
+        // --- SYSTEM UI CREATORS ---
+        function setupUI() {
+            // Selector Warna
+            const blockSel = document.getElementById('block-selector');
+            blockSel.innerHTML = '';
+            config.colors.forEach((c, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `w-9 h-9 rounded-xl shrink-0 border-2 transition ${idx === state.selectedColorIndex ? 'border-white scale-105' : 'border-transparent'}`;
+                btn.style.backgroundColor = c.hex;
+                btn.innerHTML = idx === state.selectedColorIndex ? '<i class="fa-solid fa-check text-white text-xs"></i>' : '';
+                btn.onclick = () => {
+                    state.selectedColorIndex = idx;
+                    setupUI();
+                };
+                blockSel.appendChild(btn);
+            });
+
+            // Selector Bentuk Objek Baru
+            const shapeSel = document.getElementById('shape-selector');
+            shapeSel.innerHTML = '';
+            config.shapes.forEach(s => {
+                const btn = document.createElement('button');
+                const isSel = state.selectedShape === s.id;
+                btn.className = `px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 ${isSel ? 'bg-indigo-600 text-white border border-indigo-400 shadow' : 'bg-slate-800 text-slate-300 border border-slate-700'}`;
+                btn.innerHTML = `<i class="fa-solid ${s.icon}"></i> <span>${s.name}</span>`;
+                btn.onclick = () => {
+                    state.selectedShape = s.id;
+                    setupUI();
+                    showToast(`Bentuk diganti: ${s.name}`);
+                };
+                shapeSel.appendChild(btn);
+            });
+        }
+
+        function updateStatusDot(status) {
+            const dot = document.getElementById('tracking-status-dot');
+            const txt = document.getElementById('tracking-status-text');
+            if (status === 'active') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping';
+                txt.textContent = 'Tracking: Aktif';
+            } else if (status === 'searching') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse';
+                txt.textContent = 'Mencari Tangan...';
+            } else {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-indigo-500';
+                txt.textContent = 'Mode Sentuh / Mouse';
+            }
+        }
+
+        function showToast(m) {
+            const t = document.getElementById('toast'); t.textContent = m;
+            t.classList.remove('opacity-0'); t.classList.add('opacity-100');
+            setTimeout(() => { t.classList.remove('opacity-100'); t.classList.add('opacity-0'); }, 1200);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- MAIN LOOP ---
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaTime = Math.min(0.05, clock.getDelta());
+
+            if (state.handInFrame) {
+                pointerMesh.position.lerp(state.pointerPosition, 0.25);
+                pointerMesh.visible = true;
+            } else {
+                pointerMesh.visible = false;
+            }
+
+            updatePhysics(deltaTime);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // --- WEBCAM CONTROLLER ---
+        async function startWebcam() {
+            try {
+                updateStatusDot('searching');
+                const constraints = { video: { facingMode: "user", width: isMobile ? 320 : 640, height: isMobile ? 240 : 480 } };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoElement.srcObject = stream;
+                
+                if (!state.cameraInitialized) {
+                    initHandTracking();
+                    state.cameraInitialized = true;
+                }
+                await cameraUtilsInstance.start();
+                state.cameraActive = true;
+                document.getElementById('camera-btn-text').textContent = "Matikan Kamera";
+                document.getElementById('webcam-container').classList.remove('minimized');
+            } catch (err) {
+                console.error(err);
+                updateStatusDot('inactive');
+                showToast("Kamera gagal diakses. Pastikan menggunakan HTTPS.");
+            }
+        }
+
+        function stopWebcam() {
+            if (cameraUtilsInstance) cameraUtilsInstance.stop();
+            if (videoElement.srcObject) videoElement.srcObject.getTracks().forEach(t => t.stop());
+            state.cameraActive = false; state.handInFrame = false;
+            document.getElementById('camera-btn-text').textContent = "Nyalakan Kamera";
+            document.getElementById('webcam-container').classList.add('minimized');
+            document.getElementById('hand-instructions').classList.add('hidden');
+            updateStatusDot('inactive');
+        }
+
+        window.onload = function() {
+            init3D();
+            setupUI();
+
+            document.getElementById('btn-camera-toggle').onclick = () => {
+                if (state.cameraActive) stopWebcam(); else startWebcam();
+            };
+
+            document.getElementById('btn-clear').onclick = () => {
+                state.blocks.forEach(b => scene.remove(b));
+                state.blocks = []; objectsToInteract.length = 0;
+                showToast("Arena dibersihkan!");
+            };
+
+            const btnGrav = document.getElementById('btn-gravity');
+            btnGrav.onclick = () => {
+                state.physicsEnabled = !state.physicsEnabled;
+                if (state.physicsEnabled) {
+                    btnGrav.classList.remove('bg-teal-600/20', 'text-teal-200');
+                    btnGrav.classList.add('bg-teal-600', 'text-white');
+                    document.getElementById('gravity-status').textContent = "Fisika: ON";
+                } else {
+                    btnGrav.classList.add('bg-teal-600/20', 'text-teal-200');
+                    btnGrav.classList.remove('bg-teal-600', 'text-white');
+                    document.getElementById('gravity-status').textContent = "Fisika: OFF";
+                    state.blocks.forEach(b => b.userData.velocity.set(0,0,0));
+                }
+            };
+
+            const modal = document.getElementById('modal-help');
+            document.getElementById('btn-help').onclick = () => modal.classList.remove('hidden');
+            document.getElementById('btn-close-help').onclick = () => modal.classList.add('hidden');
+            document.getElementById('btn-start-playing').onclick = () => modal.classList.add('hidden');
+
+            setTimeout(() => modal.classList.remove('hidden'), 500);
+            animate();
+        };
+    </script>
+</body>
+</html>
+
+
+```
