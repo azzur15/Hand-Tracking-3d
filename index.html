@@ -2,202 +2,51 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
-    <title>3D Sandbox & Hand Tracking Game (Fixed)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Hand Tracking Sandbox AI</title>
+    <!-- Tailwind CSS untuk UI Modern -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Three.js untuk Grafis 3D -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     
+    <!-- MediaPipe Hands & Camera Utils untuk Deteksi Tangan Real-time -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-
+    
     <style>
-        body, html {
+        body {
             margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
             overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             user-select: none;
+            -webkit-user-select: none;
             touch-action: none;
-            -webkit-tap-highlight-color: transparent;
+            background-color: #05050a;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
         }
-        #canvas-container {
-            width: 100%;
-            height: 100%;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 10;
+        canvas {
+            display: block;
         }
-        #webcam-container {
-            position: absolute;
-            bottom: 155px;
-            right: 15px;
-            width: 100px;
-            height: 75px;
-            border-radius: 8px;
-            overflow: hidden;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
-            z-index: 30;
-            transform: scaleX(-1);
-            background-color: #000;
-            transition: all 0.3s ease;
-        }
-        @media (min-width: 640px) {
-            #webcam-container {
-                width: 160px;
-                height: 120px;
-                bottom: 20px;
-                right: 20px;
+        /* Mode Landscape Warning */
+        @media screen and (orientation: portrait) {
+            #landscape-notice {
+                display: flex;
             }
         }
-        #webcam-container.minimized {
-            width: 0px !important;
-            height: 0px !important;
-            border: none !important;
-            opacity: 0;
-        }
-        #webcam-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 31;
-        }
-        #webcam {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        .scrollbar-none::-webkit-scrollbar {
-            display: none;
-        }
-        .scrollbar-none {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
+        @media screen and (orientation: landscape) {
+            #landscape-notice {
+                display: none;
+            }
         }
     </style>
 </head>
-<body class="bg-slate-900 text-white">
+<body class="relative w-screen h-screen overflow-hidden text-white">
 
-    <div id="canvas-container"></div>
+    <!-- Notifikasi Putar Layar (Khusus Mobile Portrait) -->
+    <div id="landscape-notice" class="hidden fixed inset-0 bg-slate-950 z-50 flex-col items-center justify-center p-6 text-center">
 
-    <div class="absolute top-0 left-0 w-full p-3 z-20 pointer-events-none flex flex-col justify-between h-full">
-        <div class="flex flex-col sm:flex-row justify-between items-start w-full gap-2">
-            <div class="bg-slate-900/90 backdrop-blur-md p-3 rounded-xl border border-slate-700 pointer-events-auto max-w-xs w-full sm:w-auto">
-                <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="text-indigo-400"><i class="fa-solid fa-shapes"></i></span>
-                    3D Multi-Shape Sandbox
-                </h1>
-                
-                <div class="mt-1.5 flex items-center gap-2 text-[11px]">
-                    <span id="tracking-status-dot" class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-                    <span id="tracking-status-text" class="text-slate-300 font-medium">Mode Sentuh / Mouse</span>
-                </div>
-            </div>
-
-            <div class="bg-slate-900/90 backdrop-blur-md p-2 rounded-xl border border-slate-700 pointer-events-auto flex flex-col gap-1.5 self-end sm:self-auto items-end">
-                <button id="btn-camera-toggle" class="px-3 py-1.5 bg-indigo-600 active:bg-indigo-700 hover:bg-indigo-500 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition duration-150-none">
-                    <i class="fa-solid fa-video"></i> <span id="camera-btn-text">Nyalakan Kamera</span>
-                </button>
-                <div id="https-warning" class="text-[9px] text-amber-400 hidden max-w-[180px] text-right leading-tight">
-                    *Gunakan HTTPS/Hosting agar kamera di HP Android berfungsi.
-                </div>
-            </div>
-        </div>
-
-        <div id="hand-instructions" class="self-center bg-black/70 backdrop-blur-sm px-4 py-2.5 rounded-full border border-white/10 pointer-events-none text-center hidden mb-24 animate-bounce">
-            <p class="text-xs font-medium flex items-center gap-1.5">
-                <i class="fa-solid fa-hand-pointer text-indigo-400 text-sm"></i>
-                <span id="instruction-text">Dekatkan tangan Anda ke kamera</span>
-            </p>
-        </div>
-
-        <div class="w-full flex flex-col gap-2.5 bg-slate-900/95 backdrop-blur-md p-3 rounded-2xl border border-slate-700 pointer-events-auto shadow-2xl">
-            
-            <div class="flex items-center gap-2 border-b border-slate-800 pb-2">
-                <span class="text-xs font-semibold text-slate-300 shrink-0">Bentuk:</span>
-                <div id="shape-selector" class="flex gap-2 overflow-x-auto scrollbar-none w-full">
-                    </div>
-            </div>
-
-            <div class="flex items-center gap-2 w-full">
-                <span class="text-xs font-semibold text-slate-300 shrink-0">Warna:</span>
-                <div id="block-selector" class="flex gap-2 overflow-x-auto scrollbar-none w-full">
-                    </div>
-            </div>
-
-            <div class="flex items-center justify-between gap-2 border-t border-slate-800 pt-2">
-                <div class="text-[10px] text-slate-400 max-w-[45%] leading-tight">
-                    <i class="fa-solid fa-circle-info text-indigo-400"></i> Ketuk area tanah/objek untuk menaruh bentuk baru.
-                </div>
-                
-                <div class="flex items-center gap-1.5">
-                    <button id="btn-clear" class="px-2.5 py-1.5 bg-red-600/20 active:bg-red-600 border border-red-500/30 rounded-lg text-xs font-semibold flex items-center gap-1 text-red-300">
-                        <i class="fa-solid fa-trash-can"></i> <span>Hapus</span>
-                    </button>
-                    <button id="btn-gravity" class="px-2.5 py-1.5 bg-teal-600/20 active:bg-teal-600 border border-teal-500/30 rounded-lg text-xs font-semibold flex items-center gap-1 text-teal-300">
-                        <i class="fa-solid fa-earth-asia"></i> <span id="gravity-status">Fisika: OFF</span>
-                    </button>
-                    <button id="btn-help" class="p-1.5 bg-slate-800 active:bg-slate-700 rounded-lg text-xs font-semibold">
-                        <i class="fa-solid fa-circle-question text-base"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="webcam-container" class="minimized">
-        <video id="webcam" autoplay playsinline></video>
-        <canvas id="webcam-canvas"></canvas>
-    </div>
-
-    <div id="modal-help" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-5 shadow-2xl relative max-h-[85vh] overflow-y-auto">
-            <button id="btn-close-help" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">
-                <i class="fa-solid fa-xmark"></i>
-            </button>
-            <h2 class="text-xl font-bold mb-3 text-indigo-400 flex items-center gap-2">
-                <i class="fa-solid fa-circle-info"></i> Petunjuk Bermain
-            </h2>
-            
-            <div class="space-y-3.5 text-slate-300 text-xs">
-                <div>
-                    <h3 class="font-bold text-white mb-1 flex items-center gap-1.5 text-sm">
-                        <i class="fa-solid fa-mobile-screen-button text-indigo-400"></i>Mode Sentuh / Mobile Android
-                    </h3>
-                    <ul class="list-disc list-inside space-y-1 pl-1">
-                        <li><strong>Ketuk Sekali:</strong> Membuat bentuk terpilih di atas tanah atau menumpuk di atas objek lain.</li>
-                        <li><strong>Geser 1 Jari:</strong> Memutar kamera dunia 3D.</li>
-                        <li><strong>Geser 2 Jari / Cubit:</strong> Menggeser atau memperbesar (Zoom) kamera.</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <h3 class="font-bold text-white mb-1 flex items-center gap-1.5 text-sm">
-                        <i class="fa-solid fa-hand-pointer text-indigo-400"></i>Mode Hand Tracking (Kamera)
-                    </h3>
-                    <p class="text-slate-400 mb-1">Butuh lingkungan terang dan protokol HTTPS:</p>
-                    <ul class="list-disc list-inside space-y-1 pl-1">
-                        <li><strong>Cubit Jari (Telunjuk + Jempol):</strong> Mengambil atau melahirkan objek baru di tangan.</li>
-                        <li><strong>Buka Jari:</strong> Melepaskan/menaruh objek.</li>
-                    </ul>
-                </div>
-            </div>
-
-            <button id="btn-start-playing" class="w-full mt-4 py-2 bg-indigo-600 text-white font-bold rounded-xl text-sm">
-                Mulai Bermain
-            </button>
-        </div>
-    </div>
-
-    <div id="toast" class="fixed bottom-36 left-1/2 transform -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-semibold shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none z-50">
+```
+ranslate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-semibold shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none z-50">
         Pesan Notifikasi
     </div>
 
@@ -981,7 +830,4 @@ default:
         };
     </script>
 </body>
-</html>
-
-
-```
+    </html>
